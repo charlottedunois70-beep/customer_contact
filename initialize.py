@@ -34,22 +34,119 @@ load_dotenv()
 # 関数定義
 ############################################################
 
-def initialize():
+def initialize_agent_executor():
+    """
+    画面読み込み時にAgent Executor（AIエージェント機能の実行を担当するオブジェクト）を作成
+    """
+    logger = logging.getLogger(ct.LOGGER_NAME)
+
     try:
-        initialize_session_state()
-        logger = logging.getLogger(ct.LOGGER_NAME)
-        logger.info("Session state initialized")
-        
-        initialize_session_id()
-        logger.info("Session ID initialized")
-        
-        initialize_logger()
-        logger.info("Logger initialized")
-        
-        initialize_agent_executor()
-        logger.info("Agent executor initialized")
+        # すでにAgent Executorが作成済みの場合、後続の処理を中断
+        if "agent_executor" in st.session_state:
+            logger.info("Agent executor already exists. Skipping initialization.")
+            return
+
+        # 消費トークン数カウント用のオブジェクトを用意
+        st.session_state.enc = tiktoken.get_encoding(ct.ENCODING_KIND)
+        logger.info(f"Encoding initialized: {ct.ENCODING_KIND}")
+
+        # LLMの初期化
+        st.session_state.llm = ChatOpenAI(
+            model_name=ct.MODEL,
+            temperature=ct.TEMPERATURE,
+            streaming=True
+        )
+        logger.info(f"ChatOpenAI initialized: {ct.MODEL}")
+
+        # 各Tool用のChainを作成（存在確認付き）
+        try:
+            st.session_state.customer_doc_chain = utils.create_rag_chain(ct.DB_CUSTOMER_PATH)
+            logger.info("Customer doc chain initialized")
+        except Exception as e:
+            logger.error(f"Failed to create customer doc chain: {e}")
+
+        try:
+            st.session_state.service_doc_chain = utils.create_rag_chain(ct.DB_SERVICE_PATH)
+            logger.info("Service doc chain initialized")
+        except Exception as e:
+            logger.error(f"Failed to create service doc chain: {e}")
+
+        try:
+            st.session_state.company_doc_chain = utils.create_rag_chain(ct.DB_COMPANY_PATH)
+            logger.info("Company doc chain initialized")
+        except Exception as e:
+            logger.error(f"Failed to create company doc chain: {e}")
+
+        try:
+            st.session_state.rag_chain = utils.create_rag_chain(ct.DB_ALL_PATH)
+            logger.info("RAG chain initialized")
+        except Exception as e:
+            logger.error(f"Failed to create RAG chain: {e}")
+
+        try:
+            st.session_state.general_doc_chain = utils.create_rag_chain(ct.DB_GENERAL_PATH)
+            logger.info("General doc chain initialized")
+        except Exception as e:
+            logger.error(f"Failed to create general doc chain: {e}")
+
+        try:
+            st.session_state.faq_doc_chain = utils.create_rag_chain(ct.DB_FAQ_PATH)
+            logger.info("FAQ doc chain initialized")
+        except Exception as e:
+            logger.error(f"Failed to create FAQ doc chain: {e}")
+
+        # Web検索用のToolを設定するためのオブジェクトを用意
+        search = SerpAPIWrapper()
+        logger.info("SerpAPIWrapper initialized")
+
+        # Agent Executorに渡すTool一覧を作成
+        tools = [
+            Tool(
+                name=ct.SEARCH_COMPANY_INFO_TOOL_NAME,
+                func=utils.run_company_doc_chain,
+                description=ct.SEARCH_COMPANY_INFO_TOOL_DESCRIPTION
+            ),
+            Tool(
+                name=ct.SEARCH_SERVICE_INFO_TOOL_NAME,
+                func=utils.run_service_doc_chain,
+                description=ct.SEARCH_SERVICE_INFO_TOOL_DESCRIPTION
+            ),
+            Tool(
+                name=ct.SEARCH_CUSTOMER_COMMUNICATION_INFO_TOOL_NAME,
+                func=utils.run_customer_doc_chain,
+                description=ct.SEARCH_CUSTOMER_COMMUNICATION_INFO_TOOL_DESCRIPTION
+            ),
+            Tool(
+                name = ct.SEARCH_WEB_INFO_TOOL_NAME,
+                func=search.run,
+                description=ct.SEARCH_WEB_INFO_TOOL_DESCRIPTION
+            ),
+            Tool(
+                name=ct.SEARCH_GENERAL_INFO_TOOL_NAME,
+                func=utils.run_general_doc_chain,
+                description=ct.SEARCH_GENERAL_INFO_TOOL_DESCRIPTION
+            ),
+            Tool(
+                name=ct.SEARCH_FAQ_INFO_TOOL_NAME,
+                func=utils.run_faq_doc_chain,
+                description=ct.SEARCH_FAQ_INFO_TOOL_DESCRIPTION
+            ),
+        ]
+        logger.info(f"{len(tools)} tools prepared for agent")
+
+        # Agent Executorの作成
+        st.session_state.agent_executor = initialize_agent(
+            llm=st.session_state.llm,
+            tools=tools,
+            agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+            max_iterations=ct.AI_AGENT_MAX_ITERATIONS,
+            early_stopping_method="generate",
+            handle_parsing_errors=True
+        )
+        logger.info("Agent executor successfully initialized")
+
     except Exception as e:
-        logger.error(f"initialize() failed: {e}")
+        logger.error(f"initialize_agent_executor() failed: {e}")
         raise
     """
     画面読み込み時に実行する初期化処理
