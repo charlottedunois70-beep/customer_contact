@@ -23,6 +23,7 @@ import warnings
 warnings.filterwarnings("ignore", message="Importing verbose from langchain root module")
 
 
+
 ############################################################
 # 設定関連
 ############################################################
@@ -34,6 +35,22 @@ load_dotenv()
 ############################################################
 
 def initialize():
+    try:
+        initialize_session_state()
+        logger = logging.getLogger(ct.LOGGER_NAME)
+        logger.info("Session state initialized")
+        
+        initialize_session_id()
+        logger.info("Session ID initialized")
+        
+        initialize_logger()
+        logger.info("Logger initialized")
+        
+        initialize_agent_executor()
+        logger.info("Agent executor initialized")
+    except Exception as e:
+        logger.error(f"initialize() failed: {e}")
+        raise
     """
     画面読み込み時に実行する初期化処理
     """
